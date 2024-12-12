@@ -1,0 +1,394 @@
+SQL
+
+
+Query 1:
+SELECT sMonth
+FROM
+(SELECT MAX(iMonthDay) AS LASTDAY
+FROM tblDimDate
+WHERE iYear = YEAR(CURDATE())
+GROUP BY sMonth
+HAVING MAX(iMonthDay) = 30) t;
+
+
+Query 2:
+SELECT DATEDIFF(MAX(dateDay), MIN(dateDay)) + 1 - COUNT(*) AS missingDates
+FROM tblDimDate;
+
+
+Query 3:
+SELECT o.*
+FROM tblOrder o
+LEFT JOIN tblAdvertiserLineItem ali ON o.id = ali.idOrder
+WHERE MONTH(o.dateStart) = 11
+AND YEAR(o.dateStart) = 2023
+AND MONTH(o.dateEnd) = 11
+AND YEAR(o.dateEnd) = 2023
+AND ali.idOrder IS NULL;
+
+
+Query 4:
+SELECT DATEDIFF(dateEnd, dateStart) AS campaignDuration, COUNT(*) AS numberOfCampaigns
+FROM tblOrder 
+GROUP BY campaignDuration 
+ORDER BY campaignDuration;
+
+
+Answer 1:
+Normalized Tables
+Advantages:
+1.	Data Integrity: Normalized tables reduce redundancy, ensuring that data is stored in only one place, which minimizes the risk of inconsistencies.
+2.	Efficient Storage: By eliminating duplicate data, storage requirements are reduced.
+3.	Easier Maintenance: Updates are simpler and more reliable since data modifications occur in a single location.
+4.	Improved Query Performance: For small, targeted queries, normalization reduces the size of tables and indexes, making searches more efficient.
+Disadvantages:
+1.	Complex Queries: Retrieving data often involves joining multiple tables, which can make queries more complex and slower for large datasets.
+2.	Performance Overhead: The time required to join multiple tables can impact performance, especially for large databases with frequent queries.
+3.	Learning Curve: Requires a deeper understanding of database principles to design and manage properly.
+
+Non-Normalized Tables
+Advantages:
+1.	Simplified Queries: With all related data in one table, queries are straightforward and fast to write.
+2.	Better Read Performance: For applications where read speed is critical, non-normalized tables can provide faster query results since fewer joins are needed.
+3.	Ease of Use: Simplifies database design and management, especially for smaller or less complex systems.
+Disadvantages:
+1.	Data Redundancy: Leads to duplicate data, increasing the likelihood of inconsistencies and requiring more storage.
+2.	Difficult Maintenance: Updates or deletions need to be applied in multiple places, increasing the risk of errors.
+3.	Scalability Issues: As data grows, managing and maintaining non-normalized tables can become challenging and inefficient.
+
+
+DATA VALIDATION & ANALYSIS
+
+To validate a structured text file against a given schema, you need to ensure that the data conforms to the specified schema’s delimiters, field names, and data types. 
+Building a validation pipeline as follows:
+
+
+1. Schema Definition
+The schema should define:
+•	Delimiters: How fields are separated (e.g., commas, tabs).
+•	Field Names: Expected names and their order.
+•	Data Types: The expected type for each field (e.g., integer, float, string, date).
+
+Example schema (json):
+
+{
+  "delimiter": ",",
+  "fields": 
+[
+    {"name": "id", "type": "integer"},
+    {"name": "name", "type": "string"},
+    {"name": "price", "type": "float"},
+    {"name": "date", "type": "date"}
+]
+}
+
+
+
+
+2. Pipeline Overview
+The script should:
+1.	Read the Input File: Read the file line by line.
+2.	Split and Validate Rows: Split rows using the specified delimiter and validate each field against the schema.
+3.	Handle Exceptions: Track and report rows with issues.
+4.	Summarize Results: Provide counts of valid and invalid rows, along with examples of the errors.
+
+
+3. Key Steps in the Script
+1.	Read the File: Open the file and parse rows. Use the delimiter from the schema to split fields.
+2.	Validate Field Names: Ensure the number of fields and their names match the schema.
+3.	Validate Data Types: For each field, check if the value matches the expected type (e.g., use int() for integers, float() for floats).
+4.	Track Errors: For invalid rows, note:
+o	The type of error (e.g., incorrect delimiter, wrong field count, data type mismatch).
+o	Examples of rows causing the error.
+o	Frequency of each type of exception.
+5.	Output Results: Summarize the validation results, showing:
+o	Total rows checked.
+o	Number of valid and invalid rows.
+o	Error frequency and examples.
+
+
+4. Sample Python Script
+
+import csv
+import datetime
+
+# Define a schema
+schema = {
+    "delimiter": ",",
+    "fields": [
+        {"name": "id", "type": "integer"},
+        {"name": "name", "type": "string"},
+        {"name": "price", "type": "float"},
+        {"name": "date", "type": "date"}
+    ]
+}
+
+# Type validation functions
+def validate_type(value, expected_type):
+    try:
+        if expected_type == "integer":
+            int(value)
+        elif expected_type == "float":
+            float(value)
+        elif expected_type == "date":
+            datetime.datetime.strptime(value, "%Y-%m-%d")  # Assuming date format: YYYY-MM-DD
+        elif expected_type == "string":
+            if not isinstance(value, str):
+                raise ValueError
+        return True
+    except:
+        return False
+
+# Validation pipeline
+def validate_file(file_path, schema):
+    errors = {}
+    valid_rows = 0
+    invalid_rows = 0
+
+    with open(file_path, "r") as file:
+        reader = csv.reader(file, delimiter=schema["delimiter"])
+        header = next(reader)
+
+        # Validate header
+        expected_fields = [field["name"] for field in schema["fields"]]
+        if header != expected_fields:
+            return {"error": "Header mismatch", "expected": expected_fields, "found": header}
+
+        # Validate each row
+        for row in reader:
+            if len(row) != len(schema["fields"]):
+                errors.setdefault("Field count mismatch", []).append(row)
+                invalid_rows += 1
+                continue
+
+            row_valid = True
+            for i, field in enumerate(schema["fields"]):
+                if not validate_type(row[i], field["type"]):
+                    row_valid = False
+                    error_type = f"Type mismatch in column '{field['name']}'"
+                    errors.setdefault(error_type, []).append(row)
+                    break
+
+            if row_valid:
+                valid_rows += 1
+            else:
+                invalid_rows += 1
+
+    # Summarize errors
+    error_summary = {error: {"count": len(rows), "examples": rows[:3]} for error, rows in errors.items()}
+    return {
+        "total_rows": valid_rows + invalid_rows,
+        "valid_rows": valid_rows,
+        "invalid_rows": invalid_rows,
+        "errors": error_summary
+    }
+
+# Run the script
+file_path = "data.csv"  # Replace with your file path
+results = validate_file(file_path, schema)
+print(results)
+
+
+
+
+
+5. Output Example
+For a file with 100 rows:
+
+{
+  "total_rows": 100,
+  "valid_rows": 85,
+  "invalid_rows": 15,
+  "errors": {
+    "Type mismatch in column 'price'": {
+      "count": 8,
+      "examples": [["101", "Widget", "N/A", "2024-12-12"], ["102", "Gadget", "abc", "2024-11-11"]]
+    },
+    "Field count mismatch": {
+      "count": 7,
+      "examples": [["101", "Widget", "2024-12-12"], ["103", "Tool", "20.5"]]
+    }
+  }
+}
+
+This script ensures robust validation while providing actionable insights into data quality issues.
+
+
+
+
+GBQ
+
+
+Answer 1: 
+In Google BigQuery (GBQ), data is stored in the managed storage of Google Cloud Platform, and you can identify where a table's data is stored by examining its location property. The location specifies the region where the data resides, such as US, EU, or a specific regional data center.
+You can check this information in the following ways:
+1.	Using the BigQuery Console:
+o	Go to the BigQuery web UI in the Google Cloud Console.
+o	Navigate to the table in the dataset.
+o	Click on the table name to open its details.
+o	The location of the data is displayed under the "Details" tab, in the Location field.
+2.	Using SQL:
+You can query the INFORMATION_SCHEMA.TABLES system view to find the location.
+SELECT table_catalog, table_schema, table_name, location
+FROM `project_id.region_name.INFORMATION_SCHEMA.TABLES`
+WHERE table_name = 'your_table_name';
+
+Replace project_id, region_name (like region-us), and your_table_name with the relevant values.
+
+
+
+
+3.	  Using the BigQuery CLI:
+Run the following command:
+bq show --format=prettyjson project_id:dataset_id.table_id
+
+Look for the location property in the JSON output.
+
+
+Answer 2: 
+In BigQuery, a table may use partitioning to optimize query performance and cost. You can identify the partitioning details in the following ways:
+1.	Using the BigQuery Console:
+o	Navigate to the table in the Google Cloud Console.
+o	Click on the table name to open its details.
+o	Under the "Details" tab, look for the Partitioning field. It will show:
+	If the table is partitioned (e.g., by DATE, TIME, or INTEGER RANGE).
+	The column used for partitioning (if applicable).
+	Whether the table has a time-unit-based or integer-range partitioning scheme.
+
+2.	Using SQL:
+
+Query the INFORMATION_SCHEMA.PARTITIONS view to list partition details:
+SELECT partition_id, partition_type, partition_range_start, partition_range_end, is_partition FROM `project_id.region_name.INFORMATION_SCHEMA.PARTITIONS` WHERE table_name = 'your_table_name';
+
+This will provide details such as partition IDs and the range of each partition.
+
+
+3.	Using the BigQuery CLI:
+Run the following command:Using the BigQuery CLI:
+Run the following command:
+
+bq show --format=prettyjson project_id:dataset_id.table_id
+
+Look for the timePartitioning property in the JSON output, which includes details like the type of partitioning and the field used.
+
+By following these methods, you can accurately determine where the data of a BigQuery table is stored and understand the table's partitioning details.
+
+
+
+Query 1:
+
+SELECT 
+ARRAY_LENGTH(arysegments) AS num_segments,
+COUNT(auctionid) AS num_auctions,
+COUNT(DISTINCT idlineitem) AS num_line_items
+FROM  `your_project_id.your_dataset_id.auctions` GROUP BY num_segments ORDER BY  num_segments;
+
+
+Query 2:
+
+SELECT segment, COUNT(DISTINCT auctionid) AS distinct_auctions, COUNT(DISTINCT idlineitem) AS distinct_line_items FROM `your_project_id.your_dataset_id.auctions`, 
+UNNEST(arysegments) AS segment GROUP BY segment ORDER BY distinct_auctions DESC;
+
+
+
+LINUX, BASH
+
+#!/bin/bash
+
+# Define variables
+OUTPUT_FILE="query_results.csv"  # Output file to store results
+SQL_QUERY="select utc_date, sum(1) as num_rows from my_table where utc_date = '${DATE}' group by utc_date"
+
+# Get the first and last date of the previous month
+FIRST_DATE=$(date -d "$(date +%Y-%m-01) -1 month" +%Y-%m-01)
+LAST_DATE=$(date -d "$FIRST_DATE +1 month -1 day" +%Y-%m-%d)
+
+# Initialize the output file
+echo "utc_date,num_rows" > $OUTPUT_FILE
+
+# Loop through all dates in the previous month
+CURRENT_DATE=$FIRST_DATE
+while [[ "$CURRENT_DATE" < "$(date -d "$LAST_DATE +1 day" +%Y-%m-%d)" ]]; do
+
+  # Replace the placeholder DATE in the SQL query
+  QUERY=$(echo $SQL_QUERY | sed "s/\${DATE}/$CURRENT_DATE/")
+
+  # Execute the query (replace 'bq' with the command/tool you're using to run SQL)
+  QUERY_RESULT=$(bq query --use_legacy_sql=false --format=csv "$QUERY")
+
+  # Skip the header row and append the result to the output file
+  echo "$QUERY_RESULT" | sed '1d' >> $OUTPUT_FILE
+
+  # Move to the next date
+  CURRENT_DATE=$(date -d "$CURRENT_DATE +1 day" +%Y-%m-%d)
+done
+
+echo "Query results saved to $OUTPUT_FILE"
+
+
+
+
+Python
+
+import subprocess
+import csv
+from datetime import datetime, timedelta
+
+# Function to get the dates of the previous month
+def get_previous_month_dates():
+    today = datetime.today()
+    first_day_of_this_month = today.replace(day=1)
+    last_day_of_last_month = first_day_of_this_month - timedelta(days=1)
+    first_day_of_last_month = last_day_of_last_month.replace(day=1)
+    
+    # Generate all dates of the previous month
+    current_date = first_day_of_last_month
+    dates = []
+    while current_date <= last_day_of_last_month:
+        dates.append(current_date.strftime('%Y-%m-%d'))
+        current_date += timedelta(days=1)
+    return dates
+
+# Hive query execution function
+def execute_hive_query(date):
+    SQL_QUERY = f"select utc_date, sum(1) as num_rows from my_table where utc_date = '{date}' group by utc_date"
+    try:
+        # Execute the Hive query using subprocess (adjust 'hive' if needed for your environment)
+        result = subprocess.run(
+            ["hive", "-e", SQL_QUERY],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return result.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing query for date {date}: {e.stderr}")
+        return None
+
+# Main function
+def main():
+    output_file = "query_results.csv"
+    dates = get_previous_month_dates()
+    
+    # Write results to CSV file
+    with open(output_file, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["utc_date", "num_rows"])  # Write header row
+
+        for date in dates:
+            print(f"Running query for date: {date}")
+            result = execute_hive_query(date)
+            if result:
+                # Parse and write the result to the CSV file
+                lines = result.splitlines()
+                for line in lines:
+                    # Assuming Hive output has tab-separated columns
+                    columns = line.split("\t")
+                    if len(columns) == 2:  # Ensure the result has the correct number of columns
+                        writer.writerow(columns)
+    
+    print(f"Query results saved to {output_file}")
+
+# Run the script
+if __name__ == "__main__":
+    main()
